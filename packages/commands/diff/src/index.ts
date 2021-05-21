@@ -1,27 +1,26 @@
 import {
-  CommandFactory, createCommand,
+  CommandFactory,
+  createCommand,
   ensureAbsolute,
-
-  GlobalArgs, parseGlobalArgs
+  GlobalArgs,
+  parseGlobalArgs,
 } from '@graphql-inspector/commands';
 import {
   Change,
-
-
-
-  CompletionArgs, CompletionHandler, CriticalityLevel, diff as diffSchema,
-
-
+  CompletionArgs,
+  CompletionHandler,
+  CriticalityLevel,
+  diff as diffSchema,
   DiffRule,
-  Rule
+  Rule,
 } from '@graphql-inspector/core';
-import { bolderize, Logger, symbols } from '@graphql-inspector/logger';
-import { existsSync } from 'fs';
-import { GraphQLSchema } from 'graphql';
+import {bolderize, Logger, symbols} from '@graphql-inspector/logger';
+import {existsSync} from 'fs';
+import {GraphQLSchema} from 'graphql';
 
-export { CommandFactory };
+export {CommandFactory};
 
-export function handler(input: {
+export async function handler(input: {
   oldSchema: GraphQLSchema;
   newSchema: GraphQLSchema;
   onComplete?: string;
@@ -48,7 +47,7 @@ export function handler(input: {
         .filter((f) => f)
     : [];
 
-  const changes = diffSchema(input.oldSchema, input.newSchema, rules);
+  const changes = await diffSchema(input.oldSchema, input.newSchema, rules);
 
   if (changes.length === 0) {
     Logger.success('No changes detected');
@@ -128,7 +127,9 @@ export default createCommand<
         const apolloFederation = args.federation || false;
         const aws = args.aws || false;
         const method = args.method?.toUpperCase() || 'POST';
-        const {headers, leftHeaders, rightHeaders, token} = parseGlobalArgs(args);
+        const {headers, leftHeaders, rightHeaders, token} = parseGlobalArgs(
+          args,
+        );
 
         const oldSchemaHeaders = leftHeaders || headers;
         const newSchemaHeaders = rightHeaders || headers;
