@@ -17,14 +17,20 @@ import {
 import {bolderize, Logger, symbols} from '@graphql-inspector/logger';
 import {existsSync} from 'fs';
 import {GraphQLSchema} from 'graphql';
+import {mergeSchemas} from '@graphql-tools/merge';
+import express from 'express';
+import {graphqlHTTP} from 'express-graphql';
+import path from 'path';
 
 export {CommandFactory};
 
 export function handler(input: {
   oldSchema: GraphQLSchema;
   newSchema: GraphQLSchema;
-  onComplete?: string;
   rules?: Array<string | number>;
+  visual?: boolean;
+  port?: number;
+  onComplete?: string;
 }) {
   const onComplete = input.onComplete
     ? resolveCompletionHandler(input.onComplete)
@@ -78,7 +84,28 @@ export function handler(input: {
     reportNonBreakingChanges(nonBreakingChanges);
   }
 
-  onComplete({breakingChanges, dangerousChanges, nonBreakingChanges});
+  onComplete(
+    {breakingChanges, dangerousChanges, nonBreakingChanges},
+    input.visual,
+  );
+
+  if (input.visual) {
+    const schema = mergeSchemas({
+      schemas: [input.oldSchema, input.newSchema],
+      onFieldTypeConflict: (_, right) => right,
+    });
+
+    const app = express();
+    app.set('json spaces', 2);
+    app.use('/graphql', graphqlHTTP({schema}));
+    app.get('/changes', (_, res) => res.status(200).json(changes));
+    app.use('/voyager', express.static(path.join(__dirname, 'static')));
+    app.listen(input.port);
+
+    Logger.log(`\nJSON Diff:\thttp://localhost:${input.port}/changes`);
+
+    Logger.log(`Visual Diff:\thttp://localhost:${input.port}/voyager`);
+  }
 }
 
 export default createCommand<
@@ -87,6 +114,8 @@ export default createCommand<
     oldSchema: string;
     newSchema: string;
     rule?: Array<string | number>;
+    visual?: boolean;
+    port?: number;
     onComplete?: string;
   } & GlobalArgs
 >((api) => {
@@ -111,6 +140,16 @@ export default createCommand<
           rule: {
             describe: 'Add rules',
             array: true,
+          },
+          visual: {
+            describe: 'Enable visual diff',
+            type: 'boolean',
+          },
+          port: {
+            alias: 'p',
+            describe: 'Port',
+            type: 'number',
+            default: 4000,
           },
           onComplete: {
             describe: 'Handle Completion',
@@ -162,6 +201,8 @@ export default createCommand<
           oldSchema,
           newSchema,
           rules: args.rule,
+          visual: args.visual,
+          port: args.port,
           onComplete: args.onComplete,
         });
       } catch (error) {
@@ -239,7 +280,10 @@ function resolveCompletionHandler(name: string): CompletionHandler | never {
   return mod?.default || mod;
 }
 
-function failOnBreakingChanges({breakingChanges}: CompletionArgs) {
+function failOnBreakingChanges(
+  {breakingChanges}: CompletionArgs,
+  proceed?: boolean,
+) {
   const breakingCount = breakingChanges.length;
 
   if (breakingCount) {
@@ -248,7 +292,9 @@ function failOnBreakingChanges({breakingChanges}: CompletionArgs) {
         breakingCount > 1 ? 's' : ''
       }`,
     );
-    process.exit(1);
+    if (!proceed) {
+      process.exit(1);
+    }
   } else {
     Logger.success('No breaking changes detected');
   }
